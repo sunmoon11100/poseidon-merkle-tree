@@ -1,16 +1,28 @@
 use std::sync::Mutex;
 
-use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize};
 use ark_bn254::Fr;
-use light_poseidon::{Poseidon, PoseidonBytesHasher};
+use borsh::{BorshDeserialize, BorshSerialize};
+use light_poseidon::{Poseidon, PoseidonBytesHasher, PoseidonParameters};
 use once_cell::sync::Lazy;
 use thiserror::Error;
+
+use circom_t3::{ARK, MDS};
+
+mod circom_t3;
 
 pub const MAX_LEVELS: usize = 20;
 
 // Static Poseidon hasher initialized lazily and protected by a Mutex for thread safety
 static POSEIDON: Lazy<Mutex<Poseidon<Fr>>> = Lazy::new(|| {
-    Mutex::new(Poseidon::<Fr>::new_circom(2).expect("Failed to initialize Poseidon hasher"))
+    let params = PoseidonParameters {
+        ark: Vec::from(ARK),
+        mds: MDS.iter().map(|row| row.to_vec()).collect(),
+        full_rounds: 8,
+        partial_rounds: 57,
+        width: 3,
+        alpha: 5,
+    };
+    Mutex::new(Poseidon::<Fr>::new(params))
 });
 
 #[derive(Error, Debug, PartialEq)]
@@ -25,7 +37,7 @@ pub enum PoseidonMerkleTreeError {
     PoseidonLockError,
 }
 
-#[derive(Clone, AnchorSerialize, AnchorDeserialize, Debug, PartialEq)]
+#[derive(Clone, BorshSerialize, BorshDeserialize, Debug, PartialEq)]
 pub struct PoseidonMerkleTree {
     pub levels: u32,
     pub filled_subtrees: Vec<[u8; 32]>,
@@ -46,13 +58,13 @@ impl PoseidonMerkleTree {
         let filled_subtrees: Vec<[u8; 32]> = (0..levels).map(zeros).collect();
 
         // Initialize roots with zeros and set the first root
-        let mut roots = vec![[0; 32]; MAX_LEVELS];
+        let mut roots = [[0; 32]; MAX_LEVELS];
         roots[0] = zeros(levels - 1);
 
         Ok(PoseidonMerkleTree {
             levels,
             filled_subtrees,
-            roots,
+            roots: roots.to_vec(),
             current_root_index: 0,
             next_index: 0,
         })
