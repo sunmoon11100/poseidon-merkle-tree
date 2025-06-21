@@ -1,6 +1,6 @@
 use ark_bn254::Fr;
+use borsh::{BorshDeserialize, BorshSerialize};
 use light_poseidon::{Poseidon, PoseidonBytesHasher};
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const MAX_LEVELS: usize = 20;
@@ -14,7 +14,7 @@ pub enum PoseidonMerkleTreeError {
     MerkleTreeFull,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, BorshSerialize, BorshDeserialize, Debug, PartialEq)]
 pub struct PoseidonMerkleTree {
     pub levels: u32,
     pub filled_subtrees: Vec<[u8; 32]>,
