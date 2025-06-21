@@ -1,9 +1,17 @@
+use std::sync::Mutex;
+
+use anchor_lang::{prelude::borsh, AnchorDeserialize, AnchorSerialize};
 use ark_bn254::Fr;
-use borsh::{BorshDeserialize, BorshSerialize};
 use light_poseidon::{Poseidon, PoseidonBytesHasher};
+use once_cell::sync::Lazy;
 use thiserror::Error;
 
 pub const MAX_LEVELS: usize = 20;
+
+// Static Poseidon hasher initialized lazily and protected by a Mutex for thread safety
+static POSEIDON: Lazy<Mutex<Poseidon<Fr>>> = Lazy::new(|| {
+    Mutex::new(Poseidon::<Fr>::new_circom(2).expect("Failed to initialize Poseidon hasher"))
+});
 
 #[derive(Error, Debug, PartialEq)]
 pub enum PoseidonMerkleTreeError {
@@ -12,9 +20,12 @@ pub enum PoseidonMerkleTreeError {
 
     #[error("Merkle tree is full")]
     MerkleTreeFull,
+
+    #[error("Failed to acquire Poseidon hasher lock")]
+    PoseidonLockError,
 }
 
-#[derive(Clone, BorshSerialize, BorshDeserialize, Debug, PartialEq)]
+#[derive(Clone, AnchorSerialize, AnchorDeserialize, Debug, PartialEq)]
 pub struct PoseidonMerkleTree {
     pub levels: u32,
     pub filled_subtrees: Vec<[u8; 32]>,
@@ -55,7 +66,11 @@ impl PoseidonMerkleTree {
         let mut current_index = self.next_index;
         let mut current_level_hash = leaf.clone();
 
-        let mut poseidon = Poseidon::<Fr>::new_circom(2).unwrap();
+        // Acquire the Poseidon hasher lock
+        let mut poseidon = POSEIDON
+            .lock()
+            .map_err(|_| PoseidonMerkleTreeError::PoseidonLockError)?;
+
         for i in 0..self.levels {
             let (left, right) = if current_index % 2 == 0 {
                 (current_level_hash, zeros(i))
